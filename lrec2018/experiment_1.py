@@ -2,15 +2,20 @@
 import numpy as np
 
 from wordkit.readers import Celex
-from wordkit.transformers import ONCTransformer, LinearTransformer, OpenNGramTransformer, CVTransformer, WickelTransformer
-from wordkit.features import patpho_bin, patpho_real, miikkulainen_features, plunkett_phonemes, miikkulainen, fourteen, sixteen, binary_features
-from wordkit.feature_extraction import phoneme_features, one_hot_characters, one_hot_phoneme_features, one_hot_phonemes
+from wordkit.transformers import ONCTransformer, LinearTransformer, \
+                                 OpenNGramTransformer, CVTransformer, \
+                                 WickelTransformer
+from wordkit.features import patpho_bin, patpho_real, miikkulainen_features, \
+                             plunkett_phonemes, miikkulainen, fourteen, \
+                             sixteen, binary_features
+from wordkit.feature_extraction import phoneme_features, one_hot_characters, \
+                                       one_hot_phoneme_features, \
+                                       one_hot_phonemes
 
 from scipy.stats.stats import pearsonr
 from reach import Reach
 from string import ascii_lowercase
 from sklearn.pipeline import FeatureUnion
-from sklearn.metrics import pairwise_distances
 from functools import partial
 from itertools import product
 from copy import deepcopy
@@ -39,6 +44,7 @@ def auto_distance(X, words):
 
     return p
 
+
 orthographic_features = {'miikkulainen': miikkulainen,
                          'fourteen': fourteen,
                          'sixteen': sixteen,
@@ -63,7 +69,6 @@ inv_phonological = {len(next(iter(v[1].values()))): k
 
 def load_featurizers(words):
     """Load the featurizers for use in the experiments."""
-
     orthographic_features = [fourteen,
                              sixteen,
                              one_hot_characters(ascii_lowercase),
@@ -82,7 +87,8 @@ def load_featurizers(words):
     possible_ortho = list(product([LinearTransformer], orthographic_features))
     possible_ortho.append([OpenNGramTransformer, 0])
     possible_ortho.append([WickelTransformer, 0])
-    possible_phono = list(product([CVTransformer, ONCTransformer], phonological_features))
+    possible_phono = list(product([CVTransformer, ONCTransformer],
+                                  phonological_features))
     possible_phono.append([OpenNGramTransformer, 0])
     possible_phono.append([WickelTransformer, 0])
 
@@ -187,7 +193,8 @@ if __name__ == "__main__":
 
     buff = None
 
-    wordlist = ["-".join([x['orthography'], "|".join(x['phonology']), str(x['syllables'])])
+    wordlist = ["-".join([x['orthography'], "|".join(x['phonology']),
+                          str(x['syllables'])])
                 for x in words]
 
     all_matrices = np.zeros((len(featurizers), len(wordlist) * len(wordlist)))

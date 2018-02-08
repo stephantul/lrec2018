@@ -1,21 +1,20 @@
+"""Experiment 2 in the paper."""
 import json
 import numpy as np
 import time
 
 from wordkit.readers import Celex
-from wordkit.transformers import ONCTransformer, LinearTransformer, OpenNGramTransformer, CVTransformer, WickelTransformer
-from wordkit.features import patpho_bin, patpho_real, miikkulainen_features, plunkett_phonemes, miikkulainen, fourteen, sixteen, binary_features
-from wordkit.feature_extraction import phoneme_features, one_hot_characters, one_hot_phoneme_features, one_hot_phonemes
+from wordkit.features import miikkulainen_features, binary_features
+from wordkit.feature_extraction import phoneme_features, \
+                                       one_hot_phoneme_features, \
+                                       one_hot_phonemes
 from tqdm import tqdm
 from old20 import old20
 
 from functools import partial
 from experiment_1 import filter_function, load_featurizers
-from read_blp import read_blp_format
+from blp import read_blp_format
 from scipy.stats.stats import pearsonr
-from itertools import combinations
-from string import ascii_lowercase
-from sklearn.metrics.pairwise import pairwise_distances
 
 
 def select_from_blp(words, blp_path):

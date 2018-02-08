@@ -1,7 +1,7 @@
-
+"""BLP functions."""
 
 def read_blp_format(filename, words=set()):
-
+    """Read RT data from the British Lexicon Project files."""
     words = set(words)
     f = open(filename)
     _ = next(f)
