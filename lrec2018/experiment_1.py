@@ -4,19 +4,22 @@ import numpy as np
 from wordkit.readers import Celex
 from wordkit.transformers import ONCTransformer, LinearTransformer, \
                                  OpenNGramTransformer, CVTransformer, \
-                                 WickelTransformer
-from wordkit.features import patpho_bin, patpho_real, miikkulainen_features, \
-                             plunkett_phonemes, miikkulainen, fourteen, \
+                                 WickelTransformer, \
+                                 ConstrainedOpenNGramTransformer, \
+                                 WeightedOpenBigramTransformer
+from wordkit.features import miikkulainen_features, \
+                             miikkulainen, fourteen, \
                              sixteen, binary_features
-from wordkit.feature_extraction import phoneme_features, one_hot_characters, \
-                                       one_hot_phoneme_features, \
-                                       one_hot_phonemes
+
+from wordkit.feature_extraction import OneHotCharacterExtractor, \
+                                       PhonemeFeatureExtractor, \
+                                       PredefinedFeatureExtractor, \
+                                       OneHotPhonemeExtractor
 
 from scipy.stats.stats import pearsonr
-from reach import Reach
-from string import ascii_lowercase
 from sklearn.pipeline import FeatureUnion
-from functools import partial
+
+from reach import Reach
 from itertools import product
 from copy import deepcopy
 from tqdm import tqdm
@@ -45,50 +48,43 @@ def auto_distance(X, words):
     return p
 
 
-orthographic_features = {'miikkulainen': miikkulainen,
-                         'fourteen': fourteen,
-                         'sixteen': sixteen,
-                         'one hot': one_hot_characters(ascii_lowercase)}
-
-phonological_features = {'patpho bin': patpho_bin,
-                         'patpho real': patpho_real,
-                         'plunkett': plunkett_phonemes,
-                         'one hot': one_hot_phonemes(),
-                         'one hot features': one_hot_phoneme_features(),
-                         'miikkulainen features': phoneme_features(miikkulainen_features,
-                                                                   use_is_vowel=False),
-                         'binary features': phoneme_features(binary_features,
-                                                             use_is_vowel=False)}
-
-inv_orthographic = {len(next(iter(v.values()))): k
-                    for k, v in orthographic_features.items()}
-
-inv_phonological = {len(next(iter(v[1].values()))): k
-                    for k, v in phonological_features.items()}
-
-
 def load_featurizers(words):
     """Load the featurizers for use in the experiments."""
-    orthographic_features = [fourteen,
-                             sixteen,
-                             one_hot_characters(ascii_lowercase),
-                             miikkulainen]
 
-    phonological_features = [one_hot_phonemes(),
-                             one_hot_phoneme_features(),
-                             phoneme_features(miikkulainen_features,
-                                              use_is_vowel=False),
-                             phoneme_features(binary_features,
-                                              use_is_vowel=False)]
+    o_c = OneHotCharacterExtractor(field='orthography').extract(words)
+    orthographic_features = {'miikkulainen': miikkulainen,
+                             'fourteen': fourteen,
+                             'sixteen': sixteen,
+                             'one hot': o_c}
+    m = PredefinedFeatureExtractor(miikkulainen_features,
+                                   field='phonology').extract(words)
+    b = PredefinedFeatureExtractor(binary_features,
+                                   field='phonology').extract(words)
+
+    o = OneHotPhonemeExtractor(field='phonology').extract(words)
+    f = PhonemeFeatureExtractor(field='phonology').extract(words)
+
+    phonological_features = {'one hot': o,
+                             'features': f,
+                             'miikkulainen features': m,
+                             'binary features': b}
+
+    inv_orthographic = {len(next(iter(v.values()))): k
+                        for k, v in orthographic_features.items()}
+
+    inv_phonological = {len(next(iter(v[1].values()))): k
+                        for k, v in phonological_features.items()}
 
     possibles = []
     ids = []
 
-    possible_ortho = list(product([LinearTransformer], orthographic_features))
+    possible_ortho = list(product([LinearTransformer], orthographic_features.values()))
     possible_ortho.append([OpenNGramTransformer, 0])
     possible_ortho.append([WickelTransformer, 0])
+    possible_ortho.append([ConstrainedOpenNGramTransformer, 0])
+    possible_ortho.append([WeightedOpenBigramTransformer, 0])
     possible_phono = list(product([CVTransformer, ONCTransformer],
-                                  phonological_features))
+                                  phonological_features.values()))
     possible_phono.append([OpenNGramTransformer, 0])
     possible_phono.append([WickelTransformer, 0])
 
@@ -96,9 +92,13 @@ def load_featurizers(words):
         if o == LinearTransformer:
             curr_o = o(o_f, field='orthography')
         elif o == WickelTransformer:
-            curr_o = o(n=1, field='orthography')
+            curr_o = o(n=3, field='orthography')
         elif o == OpenNGramTransformer:
             curr_o = o(n=2, field='orthography')
+        elif o == ConstrainedOpenNGramTransformer:
+            curr_o = o(n=2, window=3, field='orthography')
+        elif o == WeightedOpenBigramTransformer:
+            curr_o = o(weights=(1, .7, .2), field='orthography')
         else:
             curr_o = o(field='orthography')
 
@@ -123,25 +123,29 @@ def load_featurizers(words):
             curr_p = p(p_f, field='phonology')
 
         possibles.append((("o", curr_o), ("p", curr_p)))
+
         try:
-            p_len = len(next(iter(curr_p.consonants.values())))
-        except AttributeError:
+            p_len = len(next(iter(curr_p.features[1].values())))
+        except (AttributeError, TypeError) as e:
             p_len = 0
+
+        p_name = str(curr_p.__class__).split(".")[-1][:-2]
+
+        if isinstance(curr_p, WickelTransformer):
+            p_feat_name = p_name
+        else:
+            p_feat_name = inv_phonological[p_len]
+
         try:
             o_len = len(next(iter(curr_o.features.values())))
         except AttributeError:
             o_len = 0
 
         o_name = str(curr_o.__class__).split(".")[-1][:-2]
-        p_name = str(curr_p.__class__).split(".")[-1][:-2]
-        if o_name in ["WickelTransformer", "OpenNGramTransformer"]:
+        if isinstance(curr_o, WickelTransformer):
             o_feat_name = o_name
         else:
             o_feat_name = inv_orthographic[o_len]
-        if p_name in ["WickelTransformer", "OpenNGramTransformer"]:
-            p_feat_name = p_name
-        else:
-            p_feat_name = inv_phonological[p_len]
 
         ids.append((o_name,
                     p_name,
@@ -155,32 +159,13 @@ def load_featurizers(words):
 
 if __name__ == "__main__":
 
-    phonological_features = [one_hot_phonemes(),
-                             one_hot_phoneme_features(),
-                             phoneme_features(miikkulainen_features,
-                                              use_is_vowel=False),
-                             phoneme_features(binary_features,
-                                              use_is_vowel=False)]
-
-    # only include words that are possible in all sets of phonemes.
-    # therefore, find the intersection of all sets of phonemes.
-    allowed_phonemes = set()
-    for v, c in phonological_features:
-
-        feats = set(v.keys()).union(c.keys())
-        if not allowed_phonemes:
-            allowed_phonemes = feats
-        else:
-            allowed_phonemes.intersection_update(feats)
-
     cel = Celex("../../corpora/celex/epl.cd",
                 fields=('orthography', 'phonology', 'syllables'),
                 language='eng',
                 merge_duplicates=True,
-                filter_function=partial(filter_function, allowed_phonemes))
+                filter_function=filter_function_ortho)
 
     words = cel.transform()
-
     featurizers, ids = zip(*load_featurizers(words))
 
     # Experiment 1
@@ -200,10 +185,8 @@ if __name__ == "__main__":
     all_matrices = np.zeros((len(featurizers), len(wordlist) * len(wordlist)))
     for idx, f in tqdm(enumerate(featurizers), total=len(featurizers)):
         X = f.fit_transform(words)
-        sums = X.sum(1)
-        # broadcast into square
-        sums = sums + sums[:, None]
-        dist = sums - X.dot(X.T) * 2
+        X /= np.linalg.norm(X, 1)
+        dist = X.dot(X.T)
         all_matrices[idx] += dist.flatten()
 
     print("Made matrix.")

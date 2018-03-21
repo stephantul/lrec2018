@@ -4,16 +4,11 @@ import numpy as np
 import time
 
 from wordkit.readers import Celex
-from wordkit.features import miikkulainen_features, binary_features
-from wordkit.feature_extraction import phoneme_features, \
-                                       one_hot_phoneme_features, \
-                                       one_hot_phonemes
 from tqdm import tqdm
-from old20 import old20
+from old20.old20 import old_subloop
 
-from functools import partial
-from experiment_1 import filter_function, load_featurizers
-from blp import read_blp_format
+from experiment_1 import load_featurizers
+from lexicon import read_blp_format
 from scipy.stats.stats import pearsonr
 
 
@@ -27,36 +22,28 @@ def select_from_blp(words, blp_path):
             pass
 
 
+def filter_function_ortho(x):
+    """Filter words based on punctuation and length."""
+    a = not set(x['orthography']).intersection({' ', "'", '.', '/', ',', '-'})
+    return (a and
+            len(x['phonology']) < 12 and
+            len(x['orthography']) < 10 and
+            len(x['orthography']) >= 3)
+
+
 if __name__ == "__main__":
 
-    phonological_features = [one_hot_phonemes(),
-                             one_hot_phoneme_features(),
-                             phoneme_features(miikkulainen_features,
-                                              use_is_vowel=False),
-                             phoneme_features(binary_features,
-                                              use_is_vowel=False)]
+    np.random.seed(44)
 
-    # only include words that are possible in all sets of phonemes.
-    # therefore, find the intersection of all sets of phonemes.
-    allowed_phonemes = set()
-    for v, c in phonological_features:
-
-        feats = set(v.keys()).union(c.keys())
-        if not allowed_phonemes:
-            allowed_phonemes = feats
-        else:
-            allowed_phonemes.intersection_update(feats)
+    rt_data = dict(read_blp_format("data/blp-items.txt"))
 
     cel = Celex("../../corpora/celex/epl.cd",
                 fields=('orthography', 'phonology', 'syllables'),
                 language='eng',
                 merge_duplicates=True,
-                filter_function=partial(filter_function, allowed_phonemes))
+                filter_function=filter_function_ortho)
 
-    blp = dict(read_blp_format("data/blp-items.txt"))
-    words_ = [x['orthography'] for x in json.load(open("lrec_2018_words.json"))
-              if x['orthography'] in blp]
-    words = cel.transform(words_)
+    words = cel.transform(set(rt_data.keys()))
 
     temp = set()
     new_words = []
@@ -68,41 +55,48 @@ if __name__ == "__main__":
     words = new_words
 
     ortho_forms = [x['orthography'] for x in words]
+
     featurizers, ids = zip(*load_featurizers(words))
+
+    levenshtein_distances = old_subloop(ortho_forms, True)
+
+    ids = list(ids)
+    ids.append(("old_20", "old_20", "old_20", "old_20"))
 
     sample_results = []
     # Bootstrapping
-    n_samples = 100
+    n_samples = 10
+    values_to_test = (20,)
     for sample in tqdm(range(n_samples), total=n_samples):
 
-        indices = np.random.choice(np.arange(len(ortho_forms)), size=9000)
+        indices = np.random.choice(np.arange(len(ortho_forms)),
+                                   size=9000,
+                                   replace=False)
         local_ortho = [ortho_forms[x] for x in indices]
         local_words = [words[x] for x in indices]
-        blp_values = np.asarray([blp[w] for w in local_ortho])
-
-        o = old20(local_ortho)
+        rt_values = np.asarray([rt_data[w] for w in local_ortho])
 
         dists = []
 
         start = time.time()
+        o = np.sort(levenshtein_distances[indices][:, indices], 1)
 
-        for idx, f in enumerate(featurizers):
-            X = f.fit_transform(local_words)
-            sums = X.sum(1)
-            # broadcast into square
-            sums = sums + sums[:, None]
-            dist = sums - X.dot(X.T) * 2
-            dists.append(dist)
+        for idx, f in tqdm(enumerate(featurizers), total=len(featurizers)):
+            X = f.fit_transform(local_words).astype(np.float32)
+            X /= np.linalg.norm(X, axis=1)[:, None]
+            dists.append(1 - X.dot(X.T))
+
+        dists.append(o)
 
         r = []
         for x in dists:
-            r.append(pearsonr(np.sort(x, 1)[:, 1:21].mean(1), blp_values)[0])
+            t = []
+            for val in values_to_test:
+                t.append(pearsonr(np.sort(x, 1)[:, 1:val+1].mean(1),
+                         rt_values)[0])
+            r.append(t)
+
+        sample_results.append(r)
 
         print("Sample {} took {} seconds".format(sample,
                                                  time.time() - start))
-
-        old_20_values = np.asarray([o[w] for w in local_ortho])
-        r.append(pearsonr(old_20_values, blp_values)[0])
-        sample_results.append(r)
-
-    ids.append(("old_20", "old_20", "old_20", "old_20"))
