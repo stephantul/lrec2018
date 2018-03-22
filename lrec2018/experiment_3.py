@@ -6,7 +6,6 @@ from wordkit.readers import Celex
 from wordkit.features import miikkulainen, fourteen, sixteen
 from tqdm import tqdm
 from old20.old20 import old_subloop
-from functools import partial
 
 from lexicon import read_blp_format, read_dlp_format
 from scipy.stats.stats import pearsonr
@@ -32,10 +31,12 @@ def select_from_blp(words, blp_path):
             pass
 
 
+z = OneHotCharacterExtractor().extract([ascii_lowercase])
+
 orthographic_features = {'miikkulainen': miikkulainen,
                          'fourteen': fourteen,
                          'sixteen': sixteen,
-                         'one hot': OneHotCharacterExtractor(field='orthography').extract([{"orthography": ascii_lowercase}])}
+                         'one hot': z}
 
 inv_orthographic = {len(next(iter(v.values()))): k
                     for k, v in orthographic_features.items()}
@@ -44,17 +45,18 @@ inv_orthographic = {len(next(iter(v.values()))): k
 def to_csv(filename, data):
     """Write data to csv."""
     with open(filename, 'w') as f:
-        f.write("o,p,o_f,p_f,RT\n")
-        for k, v in p.items():
+        f.write("o,o_f,RT\n")
+        for k, v in data.items():
             for val in v:
-                f.write("{},{},{},{},{}\n".format(k[0], k[1], k[2], k[3], val))
+                f.write("{},{},{}\n".format(k[0], k[1], val))
 
 
 def load_featurizers_ortho(words):
     """Load the orthographic featurizers."""
+    o_c = OneHotCharacterExtractor(field='orthography').extract(words)
     orthographic_features = [fourteen,
                              sixteen,
-                             OneHotCharacterExtractor(field='orthography').extract(words),
+                             o_c,
                              miikkulainen]
 
     possible_ortho = list(product([LinearTransformer], orthographic_features))
@@ -108,7 +110,7 @@ if __name__ == "__main__":
 
     rt_data = dict(read_blp_format("data/blp-items.txt"))
 
-    cel = Celex("../../corpora/celex/epl.cd",
+    cel = Celex("../../corpora/celex/epw.cd",
                 fields=('orthography', 'phonology', 'syllables'),
                 language='eng',
                 merge_duplicates=True,
@@ -136,7 +138,7 @@ if __name__ == "__main__":
 
     sample_results = []
     # Bootstrapping
-    n_samples = 10
+    n_samples = 100
     values_to_test = (20,)
     for sample in tqdm(range(n_samples), total=n_samples):
 
@@ -173,4 +175,4 @@ if __name__ == "__main__":
                                                  time.time() - start))
 
     sample_results = np.squeeze(sample_results).T
-    to_csv("experiment_3_english.csv", dict(zip(ids, sample_results)))
+    to_csv("experiment_3_english_words.csv", dict(zip(ids, sample_results)))

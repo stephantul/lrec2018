@@ -78,7 +78,8 @@ def load_featurizers(words):
     possibles = []
     ids = []
 
-    possible_ortho = list(product([LinearTransformer], orthographic_features.values()))
+    possible_ortho = list(product([LinearTransformer],
+                          orthographic_features.values()))
     possible_ortho.append([OpenNGramTransformer, 0])
     possible_ortho.append([WickelTransformer, 0])
     possible_ortho.append([ConstrainedOpenNGramTransformer, 0])

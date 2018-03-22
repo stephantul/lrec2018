@@ -1,5 +1,4 @@
 """Experiment 2 in the paper."""
-import json
 import numpy as np
 import time
 
