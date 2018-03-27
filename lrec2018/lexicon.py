@@ -1,4 +1,5 @@
 """BLP functions."""
+import pandas as pd
 
 
 def read_blp_format(filename, words=set()):
@@ -35,11 +36,9 @@ def read_dlp_format(filename, words=set()):
             continue
 
 
-def read_lexique_format(filename, words=set()):
+def read_flp_format(filename, words=set()):
     """Read RT data from Lexique."""
     words = set(words)
-    f = open(filename)
-    _ = next(f)
-    for line in f:
-
-        line = line.strip().split()
+    for idx, line in pd.read_excel(filename).iterrows():
+        if not words or line['item'] in words:
+            yield((line['item'], line['rt']))

@@ -2,100 +2,96 @@
 import numpy as np
 import time
 
-from wordkit.readers import Celex
 from tqdm import tqdm
 from old20.old20 import old_subloop
-
-from experiment_1 import load_featurizers
-from lexicon import read_blp_format
+from lrec2018.helpers import load_featurizers_combined, \
+                             normalize, \
+                             filter_function_ortho, \
+                             to_csv
+from wordkit.readers import Celex, Lexique
+from lexicon import read_blp_format, read_dlp_format, read_flp_format
 from scipy.stats.stats import pearsonr
-
-
-def select_from_blp(words, blp_path):
-    """Select words from the blp."""
-    blp = dict(read_blp_format(blp_path))
-    for idx, word in enumerate(words):
-        try:
-            yield blp[word], idx
-        except KeyError:
-            pass
-
-
-def filter_function_ortho(x):
-    """Filter words based on punctuation and length."""
-    a = not set(x['orthography']).intersection({' ', "'", '.', '/', ',', '-'})
-    return (a and
-            len(x['phonology']) < 12 and
-            len(x['orthography']) < 10 and
-            len(x['orthography']) >= 3)
 
 
 if __name__ == "__main__":
 
     np.random.seed(44)
 
-    rt_data = dict(read_blp_format("data/blp-items.txt"))
+    corpora = (("Dutch", Celex, "", read_dlp_format, ""),
+               ("English", Celex, "", read_blp_format, ""),
+               ("French", Lexique, "", read_flp_format, ""))
 
-    cel = Celex("../../corpora/celex/epl.cd",
-                fields=('orthography', 'phonology', 'syllables'),
-                language='eng',
-                merge_duplicates=True,
-                filter_function=filter_function_ortho)
+    fields = ("orthography",)
 
-    words = cel.transform(set(rt_data.keys()))
+    for lang, reader, path, lex_func, lex_path in corpora:
 
-    temp = set()
-    new_words = []
-    for x in words:
-        if x['orthography'] in temp:
-            continue
-        temp.add(x['orthography'])
-        new_words.append(x)
-    words = new_words
+        rt_data = dict(lex_func(lex_path))
+        rt_data = {normalize(k): v for k, v in rt_data.items()}
+        r = reader(path,
+                   fields=fields,
+                   merge_duplicates=True,
+                   filter_function=filter_function_ortho)
 
-    ortho_forms = [x['orthography'] for x in words]
+        words = r.transform()
+        for x in words:
+            x['orthography'] = normalize(x['orthography'])
 
-    featurizers, ids = zip(*load_featurizers(words))
+        temp = set()
+        new_words = []
+        for x in words:
+            if x['orthography'] not in rt_data:
+                continue
+            if x['orthography'] in temp:
+                continue
+            temp.add(x['orthography'])
+            new_words.append(x)
 
-    levenshtein_distances = old_subloop(ortho_forms, True)
+        words = new_words
 
-    ids = list(ids)
-    ids.append(("old_20", "old_20", "old_20", "old_20"))
+        ortho_forms = [x['orthography'] for x in words]
+        featurizers, ids = zip(*load_featurizers_combined(words))
+        ids = list(ids)
+        ids.append(("old_20", "old_20"))
+        levenshtein_distances = old_subloop(ortho_forms, True)
 
-    sample_results = []
-    # Bootstrapping
-    n_samples = 10
-    values_to_test = (20,)
-    for sample in tqdm(range(n_samples), total=n_samples):
+        sample_results = []
+        # Bootstrapping
+        n_samples = 100
+        values_to_test = (20,)
+        for sample in tqdm(range(n_samples), total=n_samples):
 
-        indices = np.random.choice(np.arange(len(ortho_forms)),
-                                   size=9000,
-                                   replace=False)
-        local_ortho = [ortho_forms[x] for x in indices]
-        local_words = [words[x] for x in indices]
-        rt_values = np.asarray([rt_data[w] for w in local_ortho])
+            indices = np.random.choice(np.arange(len(ortho_forms)),
+                                       size=9000,
+                                       replace=False)
+            local_ortho = [ortho_forms[x] for x in indices]
+            local_words = [words[x] for x in indices]
+            rt_values = np.asarray([rt_data[w] for w in local_ortho])
 
-        dists = []
+            dists = []
 
-        start = time.time()
-        o = np.sort(levenshtein_distances[indices][:, indices], 1)
+            start = time.time()
+            o = np.sort(levenshtein_distances[indices][:, indices], 1)
 
-        for idx, f in tqdm(enumerate(featurizers), total=len(featurizers)):
-            X = f.fit_transform(local_words).astype(np.float32)
-            X /= np.linalg.norm(X, axis=1)[:, None]
-            dists.append(1 - X.dot(X.T))
+            for idx, f in tqdm(enumerate(featurizers), total=len(featurizers)):
+                X = f.fit_transform(local_words).astype(np.float32)
+                X /= np.linalg.norm(X, axis=1)[:, None]
+                dists.append(1 - X.dot(X.T))
 
-        dists.append(o)
+            dists.append(o)
 
-        r = []
-        for x in dists:
-            t = []
-            for val in values_to_test:
-                t.append(pearsonr(np.sort(x, 1)[:, 1:val+1].mean(1),
-                         rt_values)[0])
-            r.append(t)
+            r = []
+            for x in dists:
+                t = []
+                for val in values_to_test:
+                    t.append(pearsonr(np.sort(x, 1)[:, 1:val+1].mean(1),
+                             rt_values)[0])
+                r.append(t)
 
-        sample_results.append(r)
+            sample_results.append(r)
 
-        print("Sample {} took {} seconds".format(sample,
-                                                 time.time() - start))
+            print("Sample {} took {} seconds".format(sample,
+                                                     time.time() - start))
+
+        sample_results = np.squeeze(sample_results).T
+        to_csv("experiment_2_{}_words.csv".format(lang),
+               dict(zip(ids, sample_results)))

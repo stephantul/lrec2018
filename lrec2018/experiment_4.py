@@ -4,7 +4,7 @@ import time
 
 from tqdm import tqdm
 from old20.old20 import old_subloop
-from lrec2018.helpers import load_featurizers_ortho, \
+from lrec2018.helpers import load_featurizers_phono, \
                              normalize, \
                              filter_function_ortho, \
                              to_csv
@@ -21,7 +21,7 @@ if __name__ == "__main__":
                ("English", Celex, "../../corpora/celex/epw.cd", read_blp_format, "../../corpora/lexicon_projects/blp-items.txt"),
                ("French", Lexique, "../../corpora/lexique/Lexique382.txt", read_flp_format, "../../corpora/lexicon_projects/French Lexicon Project words.xls"))
 
-    fields = ("orthography", "phonology")
+    fields = ("orthography", "phonology", "syllables")
 
     for lang, reader, path, lex_func, lex_path in corpora:
 
@@ -49,14 +49,14 @@ if __name__ == "__main__":
         words = new_words
 
         ortho_forms = [x['orthography'] for x in words]
-        featurizers, ids = zip(*load_featurizers_ortho(words))
+        featurizers, ids = zip(*load_featurizers_phono(words))
         ids = list(ids)
         ids.append(("old_20", "old_20"))
         levenshtein_distances = old_subloop(ortho_forms, True)
 
         sample_results = []
         # Bootstrapping
-        n_samples = 1000
+        n_samples = 100
         values_to_test = (20,)
         for sample in tqdm(range(n_samples), total=n_samples):
 
@@ -93,5 +93,5 @@ if __name__ == "__main__":
                                                      time.time() - start))
 
         sample_results = np.squeeze(sample_results).T
-        to_csv("experiment_3_{}_words.csv".format(lang),
+        to_csv("experiment_4_{}_words.csv".format(lang),
                dict(zip(ids, sample_results)))
