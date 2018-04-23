@@ -17,9 +17,9 @@ if __name__ == "__main__":
 
     np.random.seed(44)
 
-    corpora = (("Dutch", Celex, "../../corpora/celex/dpw.cd", read_dlp_format, "../../corpora/lexicon_projects/dlp2_items.tsv"),
-               ("English", Celex, "../../corpora/celex/epw.cd", read_blp_format, "../../corpora/lexicon_projects/blp-items.txt"),
-               ("French", Lexique, "../../corpora/lexique/Lexique382.txt", read_flp_format, "../../corpora/lexicon_projects/French Lexicon Project words.xls"))
+    corpora = (("French", Lexique, "../../corpora/lexique/Lexique382.txt", read_flp_format, "../../corpora/lexicon_projects/French Lexicon Project words.xls"),
+               ("Dutch", Celex, "../../corpora/celex/dpw.cd", read_dlp_format, "../../corpora/lexicon_projects/dlp2_items.tsv"),
+               ("English", Celex, "../../corpora/celex/epw.cd", read_blp_format, "../../corpora/lexicon_projects/blp-items.txt"))
 
     fields = ("orthography", "phonology", "syllables")
 
@@ -49,14 +49,18 @@ if __name__ == "__main__":
         words = new_words
 
         ortho_forms = [x['orthography'] for x in words]
+        phono_forms = ["".join(x['phonology']) for x in words]
         featurizers, ids = zip(*load_featurizers_phono(words))
         ids = list(ids)
         ids.append(("old_20", "old_20"))
-        levenshtein_distances = old_subloop(ortho_forms, True)
+        ids.append(("pld_20", "pld_20"))
+
+        levenshtein_distances_orth = old_subloop(ortho_forms, True)
+        levenshtein_distances_phon = old_subloop(phono_forms, True)
 
         sample_results = []
         # Bootstrapping
-        n_samples = 100
+        n_samples = 1000
         values_to_test = (20,)
         for sample in tqdm(range(n_samples), total=n_samples):
 
@@ -70,7 +74,8 @@ if __name__ == "__main__":
             dists = []
 
             start = time.time()
-            o = np.sort(levenshtein_distances[indices][:, indices], 1)
+            o = np.sort(levenshtein_distances_orth[indices][:, indices], 1)
+            p = np.sort(levenshtein_distances_phon[indices][:, indices], 1)
 
             for idx, f in tqdm(enumerate(featurizers), total=len(featurizers)):
                 X = f.fit_transform(local_words).astype(np.float32)
@@ -78,6 +83,7 @@ if __name__ == "__main__":
                 dists.append(1 - X.dot(X.T))
 
             dists.append(o)
+            dists.append(p)
 
             r = []
             for x in dists:

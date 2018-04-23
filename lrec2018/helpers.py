@@ -10,13 +10,10 @@ from wordkit.transformers import ONCTransformer, LinearTransformer, \
                                  WickelTransformer, \
                                  ConstrainedOpenNGramTransformer, \
                                  WeightedOpenBigramTransformer
-from wordkit.features import miikkulainen_features, \
-                             miikkulainen, fourteen, \
-                             sixteen, binary_features
+from wordkit.features import fourteen, sixteen, miikkulainen
 
 from wordkit.feature_extraction import OneHotCharacterExtractor, \
                                        PhonemeFeatureExtractor, \
-                                       PredefinedFeatureExtractor, \
                                        OneHotPhonemeExtractor
 
 
@@ -26,13 +23,37 @@ def normalize(string):
     return s.decode('utf-8')
 
 
-def to_csv(filename, data):
+def to_csv(filename, data, score_names):
     """Write data to csv."""
     with open(filename, 'w') as f:
-        f.write("o,o_f,RT\n")
+        add = ",".join(score_names)
+        header_len = 3 + len(score_names)
+        f.write("o,o_f,iter,{}\n".format(add))
         for k, v in data.items():
-            for val in v:
-                f.write("{},{},{}\n".format(k[0], k[1], val))
+            for idx, val in enumerate(v):
+                header = ",".join(["{}"] * header_len)
+                f.write("{}\n".format(header).format(k[0],
+                                                     k[1],
+                                                     idx,
+                                                     val[0],
+                                                     val[1]))
+
+
+def to_csv_both(filename, data, score_names):
+    """Write data to csv."""
+    with open(filename, 'w') as f:
+        add = ",".join(score_names)
+        header_len = 5 + len(score_names)
+        f.write("o,p,o_f,p_f,iter,{}\n".format(add))
+        for k, v in data.items():
+            for idx, val in enumerate(v):
+                header = ",".join(["{}"] * header_len)
+                f.write("{}\n".format(header).format(k[0],
+                                                     k[1],
+                                                     k[2],
+                                                     k[3],
+                                                     idx,
+                                                     *val))
 
 
 def load_featurizers_combined(words):
@@ -44,19 +65,18 @@ def load_featurizers_combined(words):
 
         o_name, o_feat = o_id
         p_name, p_feat = p_id
-        featurizer = FeatureUnion((("o", o), ("p", p)))
+        featurizer = FeatureUnion([["o", o], ["p", p]])
         yield featurizer, (o_name, p_name, o_feat, p_feat)
 
 
 def load_featurizers_ortho(words):
     """Load the orthographic featurizers."""
     o_c = OneHotCharacterExtractor(field='orthography').extract(words)
-
-    orthographic_features = {'miikkulainen': miikkulainen,
-                             'fourteen': fourteen,
+    # 'miikkulainen': miikkulainen,
+    orthographic_features = {'fourteen': fourteen,
                              'sixteen': sixteen,
-                             'one hot': o_c}
-
+                             'one hot': o_c,
+                             'miikkulainen': miikkulainen}
     possible_ortho = list(product([LinearTransformer],
                                   orthographic_features.items()))
     possible_ortho.append([OpenNGramTransformer, ("open ngrams", 0)])
@@ -85,18 +105,16 @@ def load_featurizers_ortho(words):
 
 def load_featurizers_phono(words):
     """Load the phonological featurizers."""
-    m = PredefinedFeatureExtractor(miikkulainen_features,
-                                   field='phonology').extract(words)
-    b = PredefinedFeatureExtractor(binary_features,
-                                   field='phonology').extract(words)
+    '''m = PredefinedFeatureExtractor(miikkulainen_features,
+                                   field='phonology').extract(words)'''
+    '''b = PredefinedFeatureExtractor(binary_features,
+                                   field='phonology').extract(words)'''
 
     o = OneHotPhonemeExtractor(field='phonology').extract(words)
     f = PhonemeFeatureExtractor(field='phonology').extract(words)
 
     phonological_features = {'one hot': o,
-                             'features': f,
-                             'miikkulainen features': m,
-                             'binary features': b}
+                             'features': f}
 
     possible_phono = list(product([CVTransformer, ONCTransformer],
                                   phonological_features.items()))

@@ -7,7 +7,8 @@ from old20.old20 import old_subloop
 from lrec2018.helpers import load_featurizers_combined, \
                              normalize, \
                              filter_function_ortho, \
-                             to_csv
+                             to_csv, \
+                             to_csv_both
 from wordkit.readers import Celex, Lexique
 from lexicon import read_blp_format, read_dlp_format, read_flp_format
 from scipy.stats.stats import pearsonr
@@ -17,11 +18,11 @@ if __name__ == "__main__":
 
     np.random.seed(44)
 
-    corpora = (("Dutch", Celex, "", read_dlp_format, ""),
-               ("English", Celex, "", read_blp_format, ""),
-               ("French", Lexique, "", read_flp_format, ""))
+    corpora = (("French", Lexique, "../../corpora/lexique/Lexique382.txt", read_flp_format, "../../corpora/lexicon_projects/French Lexicon Project words.xls"),
+               ("Dutch", Celex, "../../corpora/celex/dpw.cd", read_dlp_format, "../../corpora/lexicon_projects/dlp2_items.tsv"),
+               ("English", Celex, "../../corpora/celex/epw.cd", read_blp_format, "../../corpora/lexicon_projects/blp-items.txt"))
 
-    fields = ("orthography",)
+    fields = ("orthography", "phonology", "syllables")
 
     for lang, reader, path, lex_func, lex_path in corpora:
 
@@ -51,7 +52,7 @@ if __name__ == "__main__":
         ortho_forms = [x['orthography'] for x in words]
         featurizers, ids = zip(*load_featurizers_combined(words))
         ids = list(ids)
-        ids.append(("old_20", "old_20"))
+        ids.append(("old_20", "old_20", "old_20", "old_20"))
         levenshtein_distances = old_subloop(ortho_forms, True)
 
         sample_results = []
@@ -93,5 +94,5 @@ if __name__ == "__main__":
                                                      time.time() - start))
 
         sample_results = np.squeeze(sample_results).T
-        to_csv("experiment_2_{}_words.csv".format(lang),
-               dict(zip(ids, sample_results)))
+        to_csv_both("experiment_2_{}_words.csv".format(lang),
+                    dict(zip(ids, sample_results)))

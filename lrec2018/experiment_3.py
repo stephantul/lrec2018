@@ -1,6 +1,5 @@
 """Experiment 2 in the paper."""
 import numpy as np
-import time
 
 from tqdm import tqdm
 from old20.old20 import old_subloop
@@ -10,12 +9,14 @@ from lrec2018.helpers import load_featurizers_ortho, \
                              to_csv
 from wordkit.readers import Celex, Lexique
 from lexicon import read_blp_format, read_dlp_format, read_flp_format
-from scipy.stats.stats import pearsonr
+from scipy.stats.stats import pearsonr, spearmanr
 
 
 if __name__ == "__main__":
 
     np.random.seed(44)
+
+    use_levenshtein = False
 
     corpora = (("Dutch", Celex, "../../corpora/celex/dpw.cd", read_dlp_format, "../../corpora/lexicon_projects/dlp2_items.tsv"),
                ("English", Celex, "../../corpora/celex/epw.cd", read_blp_format, "../../corpora/lexicon_projects/blp-items.txt"),
@@ -49,10 +50,9 @@ if __name__ == "__main__":
         words = new_words
 
         ortho_forms = [x['orthography'] for x in words]
-        featurizers, ids = zip(*load_featurizers_ortho(words))
-        ids = list(ids)
-        ids.append(("old_20", "old_20"))
-        levenshtein_distances = old_subloop(ortho_forms, True)
+
+        if use_levenshtein:
+            levenshtein_distances = old_subloop(ortho_forms, True)
 
         sample_results = []
         # Bootstrapping
@@ -61,37 +61,38 @@ if __name__ == "__main__":
         for sample in tqdm(range(n_samples), total=n_samples):
 
             indices = np.random.choice(np.arange(len(ortho_forms)),
-                                       size=9000,
-                                       replace=False)
+                                       size=len(words),
+                                       replace=True)
             local_ortho = [ortho_forms[x] for x in indices]
             local_words = [words[x] for x in indices]
             rt_values = np.asarray([rt_data[w] for w in local_ortho])
 
-            dists = []
+            r = []
+            featurizers, ids = zip(*load_featurizers_ortho(words))
+            ids = list(ids)
 
-            start = time.time()
-            o = np.sort(levenshtein_distances[indices][:, indices], 1)
+            if use_levenshtein:
+                l = levenshtein_distances[indices][:, indices]
+                z = np.partition(l, axis=1, kth=21)[:, :21]
+                z = np.sort(z, 1)[:, 1:21].mean(1)
+                r.append(pearsonr(z, rt_values)[0])
+                ids = [("old_20", "old_20")] + ids
 
             for idx, f in tqdm(enumerate(featurizers), total=len(featurizers)):
+
                 X = f.fit_transform(local_words).astype(np.float32)
                 X /= np.linalg.norm(X, axis=1)[:, None]
-                dists.append(1 - X.dot(X.T))
+                x = 1 - X.dot(X.T)
 
-            dists.append(o)
+                s = np.partition(x, axis=1, kth=21)[:, :21]
+                s = np.sort(s, 1)[:, 1:21].mean(1)
+                r.append((pearsonr(s, rt_values)[0],
+                          spearmanr(s, rt_values)[0]))
 
-            r = []
-            for x in dists:
-                t = []
-                for val in values_to_test:
-                    t.append(pearsonr(np.sort(x, 1)[:, 1:val+1].mean(1),
-                             rt_values)[0])
-                r.append(t)
-
+            print(r)
             sample_results.append(r)
 
-            print("Sample {} took {} seconds".format(sample,
-                                                     time.time() - start))
-
-        sample_results = np.squeeze(sample_results).T
+        sample_results = np.array(sample_results).transpose(1, 0, 2)
         to_csv("experiment_3_{}_words.csv".format(lang),
-               dict(zip(ids, sample_results)))
+               dict(zip(ids, sample_results)),
+               ("pearson", "spearman"))
