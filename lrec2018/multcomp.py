@@ -32,17 +32,20 @@ def is_sig(upper, lower):
 
 if __name__ == "__main__":
 
-    df = pd.read_csv("/Users/stephantulkens/Google Drive/code/r/lrec/experiment_3_Dutch_words.csv")
+    df = pd.read_csv("/Users/stephantulkens/Google Drive/code/r/lrec/experiment_3_eng-uk_words.csv")
 
     values = defaultdict(list)
 
-    for x in range(1000):
+    for x in range(10000):
         for y in df[df.iter == x].as_matrix():
             name = "{}-{}".format(y[0], y[1])
-            values[name].append(y[2])
+            values[name].append(y[-2])
 
     values = {k: np.array(v) for k, v in values.items()}
     values_stat = {k: (v.mean(), v.std()) for k, v in values.items()}
+
+    for (k1, v1), (k2, v2) in combinations(values.items(), 2):
+        print(k1, k2, calculate_significance(v1 - v2))
 
     '''sig = {k: interval_from_values(np.array(v))
            for k, v in comparisons.items()}'''

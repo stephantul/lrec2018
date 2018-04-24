@@ -10,11 +10,13 @@ from wordkit.transformers import ONCTransformer, LinearTransformer, \
                                  WickelTransformer, \
                                  ConstrainedOpenNGramTransformer, \
                                  WeightedOpenBigramTransformer
-from wordkit.features import fourteen, sixteen, miikkulainen
+from wordkit.features import fourteen, sixteen, miikkulainen, \
+                             miikkulainen_features, binary_features
 
 from wordkit.feature_extraction import OneHotCharacterExtractor, \
                                        PhonemeFeatureExtractor, \
-                                       OneHotPhonemeExtractor
+                                       OneHotPhonemeExtractor, \
+                                       PredefinedFeatureExtractor
 
 
 def normalize(string):
@@ -105,10 +107,10 @@ def load_featurizers_ortho(words):
 
 def load_featurizers_phono(words):
     """Load the phonological featurizers."""
-    '''m = PredefinedFeatureExtractor(miikkulainen_features,
-                                   field='phonology').extract(words)'''
-    '''b = PredefinedFeatureExtractor(binary_features,
-                                   field='phonology').extract(words)'''
+    m = PredefinedFeatureExtractor(miikkulainen_features,
+                                   field='phonology').extract(words)
+    b = PredefinedFeatureExtractor(binary_features,
+                                   field='phonology').extract(words)
 
     o = OneHotPhonemeExtractor(field='phonology').extract(words)
     f = PhonemeFeatureExtractor(field='phonology').extract(words)
@@ -148,7 +150,4 @@ def load_featurizers_phono(words):
 def filter_function_ortho(x):
     """Filter words based on punctuation and length."""
     a = not set(x['orthography']).intersection({' ', "'", '.', '/', ',', '-'})
-    return (a and
-            len(x['phonology']) < 12 and
-            len(x['orthography']) < 10 and
-            len(x['orthography']) >= 3)
+    return (a and len(x['orthography']) >= 3)

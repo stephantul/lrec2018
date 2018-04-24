@@ -7,7 +7,7 @@ from lrec2018.helpers import load_featurizers_ortho, \
                              normalize, \
                              filter_function_ortho, \
                              to_csv
-from wordkit.readers import Celex, Lexique
+from wordkit.readers import Subtlex, Lexique
 from lexicon import read_blp_format, read_dlp_format, read_flp_format
 from scipy.stats.stats import pearsonr, spearmanr
 
@@ -16,24 +16,23 @@ if __name__ == "__main__":
 
     np.random.seed(44)
 
-    use_levenshtein = False
+    use_levenshtein = True
 
-    corpora = (("Dutch", Celex, "../../corpora/celex/dpw.cd", read_dlp_format, "../../corpora/lexicon_projects/dlp2_items.tsv"),
-               ("English", Celex, "../../corpora/celex/epw.cd", read_blp_format, "../../corpora/lexicon_projects/blp-items.txt"),
-               ("French", Lexique, "../../corpora/lexique/Lexique382.txt", read_flp_format, "../../corpora/lexicon_projects/French Lexicon Project words.xls"))
+    corpora = (("nld", Subtlex, "../../corpora/subtlex/SUBTLEX-NL.cd-above2.txt", read_dlp_format, "../../corpora/lexicon_projects/dlp2_items.tsv"),
+               ("eng-uk", Subtlex, "../../corpora/subtlex/SUBTLEX-UK.xlsx", read_blp_format, "../../corpora/lexicon_projects/blp-items.txt"),
+               ("fra", Lexique, "../../corpora/lexique/Lexique382.txt", read_flp_format, "../../corpora/lexicon_projects/French Lexicon Project words.xls"))
 
-    fields = ("orthography", "phonology")
+    fields = ("orthography", "frequency")
 
     for lang, reader, path, lex_func, lex_path in corpora:
 
         rt_data = dict(lex_func(lex_path))
         rt_data = {normalize(k): v for k, v in rt_data.items()}
         r = reader(path,
-                   fields=fields,
-                   merge_duplicates=True,
-                   filter_function=filter_function_ortho)
+                   language=lang,
+                   fields=fields)
 
-        words = r.transform()
+        words = r.transform(filter_function=filter_function_ortho)
         for x in words:
             x['orthography'] = normalize(x['orthography'])
 
@@ -48,6 +47,9 @@ if __name__ == "__main__":
             new_words.append(x)
 
         words = new_words
+        words = sorted(words,
+                       key=lambda x: x['frequency'],
+                       reverse=True)[:20000]
 
         ortho_forms = [x['orthography'] for x in words]
 
@@ -56,43 +58,48 @@ if __name__ == "__main__":
 
         sample_results = []
         # Bootstrapping
-        n_samples = 1000
-        values_to_test = (20,)
+        n_samples = 10000
+
+        featurizers, ids = zip(*load_featurizers_ortho(words))
+        ids = list(ids)
+
+        estims = []
+
+        if use_levenshtein:
+            z = np.partition(levenshtein_distances, axis=1, kth=21)[:, :21]
+            z = np.sort(z, 1)[:, 1:21].mean(1)
+            ids = [("old_20", "old_20")] + ids
+            estims.append(z)
+
+        for idx, f in tqdm(enumerate(featurizers), total=len(featurizers)):
+
+            X = f.fit_transform(words).astype(np.float32)
+            X /= np.linalg.norm(X, axis=1)[:, None]
+            x = 1 - X.dot(X.T)
+            s = np.partition(x, axis=1, kth=21)[:, :21]
+            s = np.sort(s, 1)[:, 1:21].mean(1)
+            estims.append(s)
+
         for sample in tqdm(range(n_samples), total=n_samples):
 
             indices = np.random.choice(np.arange(len(ortho_forms)),
-                                       size=len(words),
-                                       replace=True)
+                                       size=len(words) * .8,
+                                       replace=False)
             local_ortho = [ortho_forms[x] for x in indices]
             local_words = [words[x] for x in indices]
             rt_values = np.asarray([rt_data[w] for w in local_ortho])
 
             r = []
-            featurizers, ids = zip(*load_featurizers_ortho(words))
-            ids = list(ids)
 
-            if use_levenshtein:
-                l = levenshtein_distances[indices][:, indices]
-                z = np.partition(l, axis=1, kth=21)[:, :21]
-                z = np.sort(z, 1)[:, 1:21].mean(1)
-                r.append(pearsonr(z, rt_values)[0])
-                ids = [("old_20", "old_20")] + ids
+            for x in estims:
 
-            for idx, f in tqdm(enumerate(featurizers), total=len(featurizers)):
-
-                X = f.fit_transform(local_words).astype(np.float32)
-                X /= np.linalg.norm(X, axis=1)[:, None]
-                x = 1 - X.dot(X.T)
-
-                s = np.partition(x, axis=1, kth=21)[:, :21]
-                s = np.sort(s, 1)[:, 1:21].mean(1)
+                s = x[indices]
                 r.append((pearsonr(s, rt_values)[0],
                           spearmanr(s, rt_values)[0]))
 
-            print(r)
             sample_results.append(r)
 
         sample_results = np.array(sample_results).transpose(1, 0, 2)
-        to_csv("experiment_3_{}_words.csv".format(lang),
+        to_csv("experiment_jackknife_{}_words.csv".format(lang),
                dict(zip(ids, sample_results)),
                ("pearson", "spearman"))
